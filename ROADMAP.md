@@ -14,4 +14,8 @@ Test an existing viewer against representative outputs. Consider an optional OME
 
 ## Distribution
 
-Select a license, GitHub owner, and visibility before distribution. Commit only after approval. The repository currently remains local.
+The repository is public at https://github.com/bradleylab/sims-reader. License selection and a versioned release remain outstanding. Commit and publication actions require approval.
+
+## Next development plan
+
+See [the next-steps plan](docs/next-steps.md) for sample and vendor validation, sidecar metadata investigation, broader format coverage, standalone verification, batch conversion, continuous integration, release preparation, and conditional OME-Zarr export. Local Beads issues track this plan; no implementation work is started by creating those issues.

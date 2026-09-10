@@ -65,6 +65,26 @@ The destination must be new and its parent must exist. Conversion streams planes
 
 See [the Zarr schema and Python examples](docs/zarr.md) and [existing viewers and OME-Zarr assessment](docs/viewers.md). This output is ordinary Zarr, not OME-Zarr.
 
+## Verify and batch convert
+
+Check an existing store against its original file:
+
+```sh
+uv run --extra zarr --frozen sims-reader verify ../results/CN_SiA_1.zarr \
+  --source ../CN_SiA_1.im --accept-provisional
+```
+
+Convert a directory of inputs (replace paths with your local directories):
+
+```sh
+uv run --extra zarr --frozen sims-reader batch /path/to/inputs /path/to/outputs \
+  --recursive --accept-provisional > batch-report.json
+```
+
+Input and output directories must be disjoint. Without `--recursive`, only immediate files are discovered. Extensions are matched case-insensitively; directory symlinks are not traversed and file symlinks are reported as failures. Relative subdirectories are preserved, and each `.im` suffix becomes `.zarr`. Collisions, including case-folded names or overlapping store paths, are reported before writing the affected stores. Existing stores, including incomplete ones, are never overwritten or resumed.
+
+Each file is converted with mandatory read-back verification. The JSON report on stdout lists every discovered input and its outcome; progress goes to stderr. A failed file does not stop independent conversions. Any failure produces a nonzero exit status. Ctrl-C during conversion reports remaining inputs as unattempted; force termination or power loss can prevent the final report. Treat output directories as quiescent during conversion and verification. See [verification limits](docs/zarr.md#verify-an-existing-store).
+
 ## View in napari
 
 The `.im` → Zarr → napari workflow has been exercised locally with napari 0.9.1 on macOS: all four ion channels from the first acquisition loaded, and the user confirmed the display worked. Interactive ROI workflows remain untested.
@@ -98,4 +118,4 @@ Only load a trusted local reference script: this command imports it as Python co
 
 Read [the format notes](docs/format.md), [methods](METHODS.md), and [roadmap](ROADMAP.md). Unsupported layouts fail explicitly; no fallback guesses, dropped planes, or lossy label decoding occur.
 
-This repository was created inside the surrounding investigation workspace. Original images, investigation results, and the reference script remain outside it. No remote or release is configured. License selection remains open before distribution.
+This repository was created inside the surrounding investigation workspace. Original images, investigation results, and the reference script remain outside it. The source is public at https://github.com/bradleylab/sims-reader. No versioned release is published; license selection remains open.

@@ -37,8 +37,47 @@ def main(argv: list[str] | None = None) -> int:
     convert.add_argument("destination", type=Path)
     convert.add_argument("--accept-provisional", action="store_true")
     convert.add_argument("--spatial-chunks", nargs=2, type=int, metavar=("ROWS", "COLUMNS"))
+    verify = commands.add_parser("verify", help="Verify an existing store against its source")
+    verify.add_argument("store", type=Path)
+    verify.add_argument("--source", type=Path, required=True)
+    verify.add_argument("--accept-provisional", action="store_true")
+    batch = commands.add_parser("batch", help="Convert a directory with a JSON outcome report")
+    batch.add_argument("folder", type=Path)
+    batch.add_argument("output", type=Path)
+    batch.add_argument("--recursive", action="store_true")
+    batch.add_argument("--accept-provisional", action="store_true")
+    batch.add_argument("--spatial-chunks", nargs=2, type=int, metavar=("ROWS", "COLUMNS"))
     args = parser.parse_args(argv)
     try:
+        if args.command == "batch":
+            from .batch import convert_batch
+
+            try:
+                batch_result = convert_batch(
+                    args.folder,
+                    args.output,
+                    accept_provisional=args.accept_provisional,
+                    recursive=args.recursive,
+                    spatial_chunks=tuple(args.spatial_chunks) if args.spatial_chunks else None,
+                    progress=lambda message: print(message, file=sys.stderr),
+                )
+            except (OSError, ValueError, TypeError) as error:
+                print(json.dumps({"batch_status": "failed", "error": str(error)}))
+                return 1
+            print(json.dumps(asdict(batch_result), indent=2))
+            return 0 if batch_result.batch_status == "complete" else 1
+        if args.command == "verify":
+            from .verification import verify_zarr
+
+            try:
+                result = verify_zarr(
+                    args.store, args.source, accept_provisional=args.accept_provisional
+                )
+            except (OSError, ValueError, KeyError, TypeError) as error:
+                print(json.dumps({"verification_status": "failed", "error": str(error)}))
+                return 1
+            print(json.dumps(asdict(result), indent=2))
+            return 0
         if args.command == "convert":
             from .conversion import convert_to_zarr
 
@@ -47,13 +86,13 @@ def main(argv: list[str] | None = None) -> int:
                 if args.spatial_chunks is not None
                 else None
             )
-            result = convert_to_zarr(
+            converted = convert_to_zarr(
                 args.path,
                 args.destination,
                 accept_provisional=args.accept_provisional,
                 spatial_chunks=chunks,
             )
-            print(json.dumps(asdict(result), indent=2))
+            print(json.dumps(asdict(converted), indent=2))
             return 0
         with ImageFile(
             args.path, accept_provisional=getattr(args, "accept_provisional", False)

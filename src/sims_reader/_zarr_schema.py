@@ -130,12 +130,22 @@ def verify_store(path: Path, image: ImageFile, attributes: dict[str, Any]) -> in
         raise VerificationError("Signal dimensions or chunks changed")
     if dict(data.attrs) != {"coordinates": "channel_label", "interpretation_status": "provisional"}:
         raise VerificationError("Signal attributes changed")
+    encoding = data.metadata.to_dict()
+    if encoding.get("zarr_format") != 3 or encoding.get("fill_value") != 0:
+        raise VerificationError("Signal storage metadata changed")
+    codecs = encoding.get("codecs")
+    if not isinstance(codecs, (list, tuple)) or list(codecs) != [
+        BytesCodec(endian="little").to_dict(),
+        attributes["compression"],
+    ]:
+        raise VerificationError("Signal codec metadata changed")
     if data.nchunks_initialized != data.nchunks:
         raise VerificationError("Missing stored chunks; refusing implicit fill values")
     for dimension, length in zip(DIMENSIONS, shape):
         coordinate = get_array(root, dimension)
         if (
-            coordinate.dtype != np.dtype("<i8")
+            dict(coordinate.attrs) != {"long_name": dimension + " (index; no physical calibration)"}
+            or coordinate.dtype != np.dtype("<i8")
             or _dimensions(coordinate) != (dimension,)
             or coordinate.nchunks_initialized != coordinate.nchunks
             or not np.array_equal(np.asarray(coordinate[:]), np.arange(length, dtype="<i8"))
@@ -143,14 +153,17 @@ def verify_store(path: Path, image: ImageFile, attributes: dict[str, Any]) -> in
             raise VerificationError(f"Coordinate mismatch: {dimension}")
     labels = get_array(root, "channel_label")
     if (
-        _dimensions(labels) != ("channel",)
+        dict(labels.attrs) != {}
+        or _dimensions(labels) != ("channel",)
         or labels.nchunks_initialized != labels.nchunks
         or list(np.asarray(labels[:])) != [channel.label for channel in info.channels]
     ):
         raise VerificationError("Channel labels changed")
     header = get_array(root, "source/header")
     if (
-        header.dtype != np.dtype("u1")
+        dict(header.attrs) != {}
+        or _dimensions(header) != ("header_byte",)
+        or header.dtype != np.dtype("u1")
         or header.nchunks_initialized != header.nchunks
         or np.asarray(header[:]).tobytes() != image.read_header()
     ):

@@ -42,3 +42,12 @@ plane = ds.stored_signal.isel(acquisition_index=0, channel=0).values
 ```
 
 Named dimensions use native Zarr v3 metadata. `channel_label` is an auxiliary coordinate. `chunks=None` avoids adding Dask; indexing loads the requested data. The source header and completion receipt remain accessible through Zarr subgroups.
+
+## Verify an existing store
+
+```sh
+uv run --extra zarr --frozen sims-reader verify ../results/CN_SiA_1.zarr \
+  --source ../CN_SiA_1.im --accept-provisional
+```
+
+Verification opens both inputs read-only and returns a JSON report with exit status zero on success or nonzero on failure. It checks completion, source and header hashes, source-derived metadata, schema, labels, coordinates, chunk presence, and every plane. Files may be relocated: historical source and destination paths are retained rather than compared with current locations. The reader code hash and historical software versions are structurally checked but cannot be authenticated from the raw file. This is not proof against deliberate tampering or simultaneous modification of the output; verify a quiescent store. A pass establishes agreement with the current provisional decoder, not vendor validation.
