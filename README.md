@@ -1,121 +1,122 @@
 # sims-reader
 
-A Python reader and lossless `.im` → Zarr translator for the **provisional Cameca 7f-GEO image layout** investigated in this workspace. Use [napari](https://napari.org/) to explore the converted ion images and draw regions of interest. This project focuses on file translation.
+Convert Cameca 7f-GEO `.im` ion images to Zarr for viewing in
+[napari](https://napari.org/) or use in Python.
 
-The reader follows channel and image-pointer tables, derives the header boundary from those pointers, and loads individual planes. It retains stored labels and opaque header bytes. It does not apply corrections or infer signal units, physical scale, or elapsed time.
+## Install
 
-**Status:** one real specimen has supported the structural interpretation. Pixel values are provisionally interpreted as square, little-endian 16-bit arrays. The exact vendor type, signedness, dimensions, orientation, and units still need independent verification. Metadata inspection is available by default; numerical decoding requires explicit opt-in. This is not a general reader for all Cameca `.im` variants.
-
-## Install and inspect
-
-Requires Python 3.12 or later. From this repository directory:
+Requires Python 3.12 or later and [uv](https://docs.astral.sh/uv/).
 
 ```sh
+git clone https://github.com/bradleylab/sims-reader.git
+cd sims-reader
 uv sync --extra zarr --frozen
-uv run --extra zarr --frozen sims-reader inspect ../CN_SiA_1.im
 ```
 
-Add `--hash` to compute a full-file SHA-256. Ordinary inspection reads structural metadata only; hashing reads the complete file. Paths passed on the command line resolve relative to your current directory. No sample data are included in the repository.
+## Convert
 
-## Python API
-
-```python
-from pathlib import Path
-from sims_reader import ImageFile
-
-source = Path("../CN_SiA_1.im")  # Replace with your file location.
-with ImageFile(source) as image:
-    print(image.metadata)
-    print(image.metadata.assumptions)
-
-# Opt in after reviewing the provisional interpretation.
-with ImageFile(source, accept_provisional=True) as image:
-    channel = image.metadata.channels[0]
-    plane = image.read_plane(channel.index, acquisition_index=0)
-    header_bytes = image.read_header()  # Full original header, including unknown fields.
-    checksum = image.source_sha256()
-```
-
-`read_plane` returns a read-only NumPy array that remains usable after closing the source. Exact unique labels can substitute for channel indices. Duplicate labels require an index. Indices are zero-based and negative indexing is deliberately rejected. `iter_planes(channel)` yields planes in stored acquisition order.
-
-Use `ImageFile` as a context manager or call `close()`. Instances are not thread-safe. The reader detects ordinary source-file modifications while open and refuses further access; do not edit the file during a session.
-
-## Extract one plane
+Replace the example paths with your own. The output directory must not exist,
+and its parent must exist.
 
 ```sh
-uv run --extra zarr --frozen sims-reader plane ../CN_SiA_1.im \
-  --channel-index 0 \
-  --index 0 \
-  --accept-provisional \
-  --output-dir results/first-plane
+uv run --extra zarr --frozen sims-reader inspect /path/to/image.im
+
+uv run --extra zarr --frozen sims-reader convert /path/to/image.im \
+  /path/to/image.zarr --accept-provisional
 ```
 
-The new directory contains `plane.npy` and `metadata.json`, including provisional assumptions, selected indices, source hash, plane-payload hash, and reader version. An existing output directory is never overwritten. No scientific transformations are performed.
+Conversion checks every pixel, coordinate, channel label, and original header
+byte after writing, and confirms that the source checksum has not changed.
+Existing outputs are never overwritten. Failed conversions retain an incomplete
+output directory; do not use it as a completed store.
 
-## Convert to Zarr
+To verify an existing conversion:
 
 ```sh
-uv run --extra zarr --frozen sims-reader convert ../CN_SiA_1.im \
-  ../results/CN_SiA_1.zarr --accept-provisional
+uv run --extra zarr --frozen sims-reader verify /path/to/image.zarr \
+  --source /path/to/image.im --accept-provisional
 ```
 
-The destination must be new and its parent must exist. Conversion streams planes into Zarr v3, then reopens and verifies every pixel, coordinate, label, and original header byte. It checks the source checksum again before marking completion. Existing destinations are never overwritten. Failed conversions retain an incomplete directory for diagnosis.
-
-`stored_signal` has dimensions `(acquisition_index, channel, row, column)`. Values retain their provisional unsigned 16-bit interpretation; zeros remain data. Default chunks contain one plane; `--spatial-chunks ROWS COLUMNS` selects smaller spatial tiles. Lossless Zstandard compression is used. No physical scale, elapsed time, or depth is invented.
-
-See [the Zarr schema and Python examples](docs/zarr.md) and [existing viewers and OME-Zarr assessment](docs/viewers.md). This output is ordinary Zarr, not OME-Zarr.
-
-## Verify and batch convert
-
-Check an existing store against its original file:
-
-```sh
-uv run --extra zarr --frozen sims-reader verify ../results/CN_SiA_1.zarr \
-  --source ../CN_SiA_1.im --accept-provisional
-```
-
-Convert a directory of inputs (replace paths with your local directories):
+To convert a folder:
 
 ```sh
 uv run --extra zarr --frozen sims-reader batch /path/to/inputs /path/to/outputs \
   --recursive --accept-provisional > batch-report.json
 ```
 
-Input and output directories must be disjoint. Without `--recursive`, only immediate files are discovered. Extensions are matched case-insensitively; directory symlinks are not traversed and file symlinks are reported as failures. Relative subdirectories are preserved, and each `.im` suffix becomes `.zarr`. Collisions, including case-folded names or overlapping store paths, are reported before writing the affected stores. Existing stores, including incomplete ones, are never overwritten or resumed.
-
-Each file is converted with mandatory read-back verification. The JSON report on stdout lists every discovered input and its outcome; progress goes to stderr. A failed file does not stop independent conversions. Any failure produces a nonzero exit status. Ctrl-C during conversion reports remaining inputs as unattempted; force termination or power loss can prevent the final report. Treat output directories as quiescent during conversion and verification. See [verification limits](docs/zarr.md#verify-an-existing-store).
+Input and output folders must be disjoint. Omit `--recursive` to process only
+immediate files. Relative subfolders are preserved. A failed file is reported
+without stopping other conversions; any failure produces a nonzero exit code.
+Progress goes to stderr and the JSON report goes to stdout.
 
 ## View in napari
 
-The `.im` → Zarr → napari workflow has been exercised locally with napari 0.9.1 on macOS: all four ion channels from the first acquisition loaded, and the user confirmed the display worked. Interactive ROI workflows remain untested.
-
-Install napari in a separate environment and use the [napari loading example](docs/viewers.md#first-choice-napari) to open the converted data. It uses `napari.Viewer()` and `viewer.add_image()` with channel labels preserved. The output is plain Zarr, so automatic loading through an OME-Zarr plugin is not assumed.
-
-## Test and check
+Install the viewer separately from the converter:
 
 ```sh
-uv run --extra zarr --frozen python -m unittest discover -s tests -v
-uv run --extra zarr --frozen ruff check .
-uv run --extra zarr --frozen ruff format --check .
-uv run --extra zarr --frozen mypy
-uv build
+uv venv .venv-napari
+uv pip install --python .venv-napari 'napari[pyqt6]==0.9.1' 'zarr==3.3.0'
 ```
 
-The routine suite generates explicitly synthetic binary fixtures locally. It requires no private data and checks exact pixel preservation, pointer relocation, per-plane access, provisional opt-in, malformed inputs, changed sources, duplicate labels, and CLI behavior.
+Save the following as `view.py`, change the store path, and run it with the
+viewer environment's Python (`.venv-napari/bin/python view.py` on macOS/Linux,
+`.venv-napari\Scripts\python.exe view.py` on Windows):
 
-For the optional local regression check against the original investigation script:
+```python
+import napari
+import zarr
 
-```sh
-uv run --extra zarr --frozen python scripts/verify_sample.py \
-  --input ../CN_SiA_1.im \
-  --reference-probe ../scripts/preview_probe.py \
-  --output results/sample-regression.json
+root = zarr.open_group("/path/to/image.zarr", mode="r")
+assert root["conversion"].attrs["conversion_status"] == "complete"
+viewer = napari.Viewer()
+viewer.add_image(
+    root["stored_signal"][0, :, :, :],
+    channel_axis=0,
+    name=list(root["channel_label"][:]),
+    axis_labels=("row", "column"),
+)
+napari.run()
 ```
 
-Only load a trusted local reference script: this command imports it as Python code. The report compares every plane against the original probe's layout and checks that the source hash is unchanged. It demonstrates regression agreement, not validation against Cameca software.
+This displays the first acquisition, with one image layer per channel. Change
+`0` to another acquisition index. Napari can display the images and draw ROIs;
+the converter does not calculate ROI statistics.
 
-## Format and scope
+## Output and methods
 
-Read [the format notes](docs/format.md), [methods](METHODS.md), and [roadmap](ROADMAP.md). Unsupported layouts fail explicitly; no fallback guesses, dropped planes, or lossy label decoding occur.
+The output is Zarr v3, not OME-Zarr. `stored_signal` has dimensions
+`(acquisition_index, channel, row, column)`, with separate index coordinates and
+`channel_label` values. Original header bytes are retained in `source/header`.
+Source SHA-256, reader provenance, and a completion receipt are included.
+Compression is lossless Zstandard. Default chunks contain one image plane;
+`--spatial-chunks ROWS COLUMNS` selects smaller spatial tiles.
 
-This repository was created inside the surrounding investigation workspace. Original images, investigation results, and the reference script remain outside it. The source is public at https://github.com/bradleylab/sims-reader. No versioned release is published; license selection remains open.
+The reader follows channel records and absolute image pointers, derives the
+header boundary from the first image, and requires complete, non-overlapping
+coverage of the remaining file. Unsupported layouts fail explicitly.
+
+**The format interpretation remains provisional.** Image blocks are interpreted
+as square, little-endian unsigned 16-bit arrays, with dimensions inferred from
+block length. Rows and columns retain their stored order without flipping or
+transposing. Zeros remain data. No correction, normalization, filtering,
+calibration, or aggregation is applied. Signal units, physical scale, timing,
+and prior instrument corrections are not inferred.
+
+Eight additional real files passed exact conversion readback, covering 3, 4,
+and 8 channels and 32–300 acquisitions. Matching instrument sidecars agreed on
+acquisition counts and channel order. These checks establish preservation under
+the current decoder; independent vendor pixel exports are still needed to
+confirm pixel interpretation and orientation. This is not a general reader for
+all Cameca `.im` variants.
+
+## Python access
+
+```python
+from sims_reader import ImageFile
+
+with ImageFile("/path/to/image.im", accept_provisional=True) as image:
+    print(image.metadata)
+    plane = image.read_plane(channel=0, acquisition_index=0)
+```
+
+Run `sims-reader --help` for all commands. Sample data are not included.

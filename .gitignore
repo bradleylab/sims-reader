@@ -1,4 +1,5 @@
 .venv/
+.venv-napari/
 __pycache__/
 *.pyc
 .ruff_cache/
@@ -20,9 +21,8 @@ data/
 .env.*
 .DS_Store
 
-# Beads / Dolt files (added by bd init)
+.beads/
 .dolt/
 *.db
 .beads-credential-key
-.beads/proxieddb/
 *.gate.lock*

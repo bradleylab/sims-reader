@@ -1,4 +1,4 @@
-"""Lossless Zarr v3 schema and read-back verification; see docs/zarr.md."""
+"""Lossless Zarr v3 schema and read-back verification; see README.md."""
 
 import hashlib
 import json

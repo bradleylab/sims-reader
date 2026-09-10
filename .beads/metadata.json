@@ -1,7 +1,0 @@
-{
-  "database": "dolt",
-  "backend": "dolt",
-  "dolt_mode": "embedded",
-  "dolt_database": "sims",
-  "project_id": "b2604a13-9788-4763-925d-9da67bdec804"
-}

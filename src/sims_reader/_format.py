@@ -1,4 +1,4 @@
-"""Structural parser for the observed 4201 layout; see docs/format.md.
+"""Structural parser for the observed 4201 layout; see README.md.
 
 Marker values and field positions originate in the specimen investigation.
 The parser derives the header boundary from pointers, without fixed file offsets.
